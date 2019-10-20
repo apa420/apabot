@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/gempir/go-twitch-irc"
-	//		"net/http"
 )
 
 // Config file structs
@@ -28,13 +27,15 @@ type Channel struct {
 
 // Bot
 type Bot struct {
-	//Config		Config
+	//Config   Config
 	Client     *twitch.Client
 	Username   string
 	UserID     string
 	OauthToken string
 	Channels   []Channel
 	Owner      string
+	UserBucket int
+	ModBucket  int
 }
 
 // TODO: test
@@ -47,6 +48,8 @@ func newBot() *Bot {
 		OauthToken: config.Account.OauthToken,
 		Channels:   config.Channels,
 		Owner:      config.Account.Owner,
+		UserBucket: 20,
+		ModBucket:  100,
 	}
 	return bot
 }
@@ -76,12 +79,24 @@ func connectToChannels(client *twitch.Client, channels []Channel) {
 }
 
 func sendMessage(target string, message string, client *twitch.Client) {
+	if message[0] == '.' || message[0] == '/' {
+		client.Say(target, "Don't use commands")
+		return
+	}
+	client.Say(target, message)
+}
+
+func sendOwnerMessage(target string, message string, client *twitch.Client) {
 	client.Say(target, message)
 }
 
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
+	if bot.UserBucket == 0 || bot.ModBucket == 0 {
+		return
+	}
+	bot.UserBucket--
 	if message.Action && message.Tags["display-name"] == bot.Owner {
-		sendMessage(message.Channel, ".me monkaS 🚨 ALERT", bot.Client)
+		sendOwnerMessage(message.Channel, ".me monkaS 🚨 ALERT", bot.Client)
 	}
 }
 
@@ -109,6 +124,17 @@ func main() {
 	})
 
 	fmt.Println("Finished loading")
+	// TODO: Start bucket system
+	/*go func() {
+		t := time.NewTimer(30 * time.Second)
+		for {
+			<-t.C
+			bot.UserBucket = 30
+			bot.ModBucket = 100
+
+			t.Reset(30 * time.Second)
+		}
+	}()*/
 	err := bot.Client.Connect()
 	check(err)
 }
