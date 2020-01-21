@@ -91,9 +91,7 @@ func sendMessage(target string, message string, bot *Bot) {
 		message = message[0:247]
 	}
 	if bot.PrvMsg == message {
-		// Doesn't work right now
-		// Need a differnt char or a way to fix it somehow
-		bot.PrvMsg += " \u0800"
+		message += " \U000E0000"
 	}
 	bot.Client.Say(target, message)
 	bot.PrvMsg = message
