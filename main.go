@@ -102,7 +102,6 @@ func sendMessage(target string, message string, bot *Bot) {
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
 	if message.Action { //&& message.Tags["display-name"] == bot.Owner {
 
-		fmt.Println(bot.NormalMsg)
 		if throttleNormalMessage(bot) {
 			return
 		}
