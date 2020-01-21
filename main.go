@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/gempir/go-twitch-irc"
 	//		"net/http"
@@ -35,6 +36,8 @@ type Bot struct {
 	OauthToken string
 	Channels   []Channel
 	Owner      string
+	NormalMsg  [20]time.Time
+	ModMsg     [100]time.Time
 }
 
 // TODO: test
@@ -47,6 +50,8 @@ func newBot() *Bot {
 		OauthToken: config.Account.OauthToken,
 		Channels:   config.Channels,
 		Owner:      config.Account.Owner,
+		NormalMsg:	[20]time.Time{},
+		ModMsg:		[100]time.Time{},
 	}
 	return bot
 }
@@ -75,14 +80,32 @@ func connectToChannels(client *twitch.Client, channels []Channel) {
 	}
 }
 
-func sendMessage(target string, message string, client *twitch.Client) {
-	client.Say(target, message)
+func sendMessage(target string, message string, bot *Bot) {
+	if !throttleMessage(bot){
+		bot.Client.Say(target, message)
+	}
 }
 
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
 	if message.Action && message.Tags["display-name"] == bot.Owner {
-		sendMessage(message.Channel, ".me monkaS 🚨 ALERT", bot.Client)
+		bot.NormalMsg = append([]time{Time.now()}, bot.NormalMsg[1:19])
+		//bot.NormalMsg = append([]time.Time.now(), bot.NormalMsg...)
+		//bot.NormalMsg = [time.Time.now()] + bot.NormalMsg[1:20]
+		//bot.NormalMsg = append(bot.NormalMsg[1:20],
+		//bot.NormalMsg = append(bot.NormalMsg, time.Time{time.Now()})
+		sendMessage(message.Channel, ".me monkaS 🚨 ALERT", bot)
 	}
+}
+
+func inBetweenTimes(start, end, check time.Time) bool{
+	return check.After(start) && check.Before(end)
+}
+
+func throttleMessage(bot *Bot)(bool){
+	if inBetweenTimes(bot.NormalMsg[19], bot.NormalMsg[19].Add(30*time.Second), time.Now()){
+		return true
+	}
+	return false
 }
 
 func main() {
