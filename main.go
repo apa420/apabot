@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/gempir/go-twitch-irc"
 )
@@ -34,8 +35,10 @@ type Bot struct {
 	OauthToken string
 	Channels   []Channel
 	Owner      string
-	UserBucket int
-	ModBucket  int
+	NormalMsg  [20]time.Time
+	ModMsg     [100]time.Time
+	PrvMsg     string
+	PrvMsgIdx  int8
 }
 
 // TODO: test
@@ -48,8 +51,10 @@ func newBot() *Bot {
 		OauthToken: config.Account.OauthToken,
 		Channels:   config.Channels,
 		Owner:      config.Account.Owner,
-		UserBucket: 20,
-		ModBucket:  100,
+		NormalMsg:  [20]time.Time{},
+		ModMsg:     [100]time.Time{},
+		PrvMsg:     "",
+		PrvMsgIdx:  0,
 	}
 	return bot
 }
@@ -78,26 +83,43 @@ func connectToChannels(client *twitch.Client, channels []Channel) {
 	}
 }
 
-func sendMessage(target string, message string, client *twitch.Client) {
+func sendMessage(target string, message string, bot *Bot) {
 	if message[0] == '.' || message[0] == '/' {
-		client.Say(target, "Don't use commands")
-		return
+		message = ". " + message
 	}
-	client.Say(target, message)
-}
-
-func sendOwnerMessage(target string, message string, client *twitch.Client) {
-	client.Say(target, message)
+	if len(message) > 247 {
+		message = message[0:247]
+	}
+	if bot.PrvMsg == message {
+		// Doesn't work right now
+		// Need a differnt char or a way to fix it somehow
+		bot.PrvMsg += " \u0800"
+	}
+	bot.Client.Say(target, message)
+	bot.PrvMsg = message
 }
 
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
-	if bot.UserBucket == 0 || bot.ModBucket == 0 {
-		return
+	if message.Action { //&& message.Tags["display-name"] == bot.Owner {
+
+		fmt.Println(bot.NormalMsg)
+		if throttleNormalMessage(bot) {
+			return
+		}
+		bot.NormalMsg[bot.PrvMsgIdx] = time.Now()
+		bot.PrvMsgIdx = (bot.PrvMsgIdx + 1) % 20
+		sendMessage(message.Channel, "Why, hello there :)", bot)
 	}
-	bot.UserBucket--
-	if message.Action && message.Tags["display-name"] == bot.Owner {
-		sendOwnerMessage(message.Channel, ".me monkaS 🚨 ALERT", bot.Client)
+}
+
+func throttleNormalMessage(bot *Bot) bool {
+	if bot.NormalMsg[(bot.PrvMsgIdx+19)%20].Add(1500 * time.Millisecond).After(time.Now()) {
+		return true
 	}
+	if bot.NormalMsg[bot.PrvMsgIdx].Add(30 * time.Second).After(time.Now()) {
+		return true
+	}
+	return false
 }
 
 func main() {
@@ -124,17 +146,6 @@ func main() {
 	})
 
 	fmt.Println("Finished loading")
-	// TODO: Start bucket system
-	/*go func() {
-		t := time.NewTimer(30 * time.Second)
-		for {
-			<-t.C
-			bot.UserBucket = 30
-			bot.ModBucket = 100
-
-			t.Reset(30 * time.Second)
-		}
-	}()*/
 	err := bot.Client.Connect()
 	check(err)
 }
