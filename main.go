@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/gempir/go-twitch-irc"
-	//		"net/http"
 )
 
 // Config file structs
@@ -28,13 +28,17 @@ type Channel struct {
 
 // Bot
 type Bot struct {
-	//Config		Config
+	//Config   Config
 	Client     *twitch.Client
 	Username   string
 	UserID     string
 	OauthToken string
 	Channels   []Channel
 	Owner      string
+	NormalMsg  [20]time.Time
+	ModMsg     [100]time.Time
+	PrvMsg     string
+	PrvMsgIdx  int8
 }
 
 // TODO: test
@@ -47,6 +51,10 @@ func newBot() *Bot {
 		OauthToken: config.Account.OauthToken,
 		Channels:   config.Channels,
 		Owner:      config.Account.Owner,
+		NormalMsg:  [20]time.Time{},
+		ModMsg:     [100]time.Time{},
+		PrvMsg:     "",
+		PrvMsgIdx:  0,
 	}
 	return bot
 }
@@ -75,14 +83,43 @@ func connectToChannels(client *twitch.Client, channels []Channel) {
 	}
 }
 
-func sendMessage(target string, message string, client *twitch.Client) {
-	client.Say(target, message)
+func sendMessage(target string, message string, bot *Bot) {
+	if message[0] == '.' || message[0] == '/' {
+		message = ". " + message
+	}
+	if len(message) > 247 {
+		message = message[0:247]
+	}
+	if bot.PrvMsg == message {
+		// Doesn't work right now
+		// Need a differnt char or a way to fix it somehow
+		bot.PrvMsg += " \u0800"
+	}
+	bot.Client.Say(target, message)
+	bot.PrvMsg = message
 }
 
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
-	if message.Action && message.Tags["display-name"] == bot.Owner {
-		sendMessage(message.Channel, ".me monkaS 🚨 ALERT", bot.Client)
+	if message.Action { //&& message.Tags["display-name"] == bot.Owner {
+
+		fmt.Println(bot.NormalMsg)
+		if throttleNormalMessage(bot) {
+			return
+		}
+		bot.NormalMsg[bot.PrvMsgIdx] = time.Now()
+		bot.PrvMsgIdx = (bot.PrvMsgIdx + 1) % 20
+		sendMessage(message.Channel, "Why, hello there :)", bot)
 	}
+}
+
+func throttleNormalMessage(bot *Bot) bool {
+	if bot.NormalMsg[(bot.PrvMsgIdx+19)%20].Add(1500 * time.Millisecond).After(time.Now()) {
+		return true
+	}
+	if bot.NormalMsg[bot.PrvMsgIdx].Add(30 * time.Second).After(time.Now()) {
+		return true
+	}
+	return false
 }
 
 func main() {
