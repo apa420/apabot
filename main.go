@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gempir/go-twitch-irc"
@@ -24,6 +26,17 @@ type Account struct {
 
 type Channel struct {
 	ChannelName string `json:"channelName"`
+}
+
+type ScheduleArray struct {
+	Schedule []Schedule `json:schedule`
+}
+type Schedule struct {
+	Title   string    `json:"title"`
+	Twitch  string    `json:"twitch"`
+	Project string    `json:"project"`
+	IntTime int64     `json:"time"`
+	Time    time.Time `json:"-"`
 }
 
 // Bot
@@ -76,6 +89,41 @@ func loadConfig() Config {
 	return config
 }
 
+func getSchedule() ScheduleArray {
+	resp, err := http.Get("https://gist.githubusercontent.com/apa420/5bb8cebdda4c7331d5384567f93e3267/raw/")
+	check(err)
+
+	defer resp.Body.Close()
+
+	var schedule ScheduleArray
+	fmt.Println(time.Now())
+	err = json.NewDecoder(resp.Body).Decode(&schedule)
+	check(err)
+	for i := 0; i < len(schedule.Schedule); i++ {
+		schedule.Schedule[i].Time = time.Unix(
+			schedule.Schedule[i].IntTime/1000, schedule.Schedule[i].IntTime%1000*1000*1000)
+	}
+	return schedule
+}
+
+// TODO: Implement
+/*
+func isChannelLive(channelId string) bool {
+	resp, err := http.Get("https://api.twitch.tv/kraken/streams/" + channelId)
+	check(err)
+
+	defer resp.Body.Close()
+
+	type T struct {
+		Stream interface{}
+	}
+	var t T
+	err = json.NewDecoder(resp.Body).Decode(&t)
+	check(err)
+	return t.Stream != nil
+}
+*/
+
 func connectToChannels(client *twitch.Client, channels []Channel) {
 	for i := 0; i < len(channels); i++ {
 		client.Join(channels[i].ChannelName)
@@ -98,14 +146,30 @@ func sendMessage(target string, message string, bot *Bot) {
 }
 
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
-	if message.Action { //&& message.Tags["display-name"] == bot.Owner {
+	if message.Message[0] == '/' {
 
 		if throttleNormalMessage(bot) {
 			return
 		}
 		bot.NormalMsg[bot.PrvMsgIdx] = time.Now()
 		bot.PrvMsgIdx = (bot.PrvMsgIdx + 1) % 20
-		sendMessage(message.Channel, "Why, hello there :)", bot)
+
+		commandName := strings.SplitN(message.Message, " ", 1)[0][1:]
+		//spaceAt := string.IndexRune(message.Message, ' ')
+		//commandName := message.Message[1:strings.IndexRune(, ' ')]
+
+		switch commandName {
+		case "":
+			sendMessage(message.Channel, "Why, hello there :)", bot)
+		case "update":
+			if bot.Owner == message.Tags["display-name"] {
+				// Do http request
+				schedule := getSchedule()
+				fmt.Println(schedule)
+
+				sendMessage(message.Channel, "Sent request", bot)
+			}
+		}
 	}
 }
 
