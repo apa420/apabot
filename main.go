@@ -1,4 +1,4 @@
-package main
+package main;
 
 import (
     "encoding/json"
@@ -7,91 +7,16 @@ import (
     "os"
     "strings"
     "time"
-    "bytes"
-    "io/ioutil"
 
     "github.com/gempir/go-twitch-irc"
 );
 
 // Config file structs
-type Config struct {
-    Account  Account   `json:"account"`
-    Github   Github    `json:"github"`
-    Channels []Channel `json:"channels"`
-};
-
-type Account struct {
-    Username   string `json:"username"`
-    UserID     string `json:"userid"`
-    OauthToken string `json:"oauthToken"`
-    ClientID   string `json:"clientID"`
-    Owner      string `json:"owner"`
-};
-
-type Github struct {
-    GithubToken string `json:"oauthToken"`
-    ScheduleUrl string `json:"scheduleUrl"`
-};
-
-type Channel struct {
-    ChannelName string `json:"channelName"`
-};
-
-type ScheduleArray struct {
-    Schedule []Schedule `json:schedule`
-};
-
-type Schedule struct {
-    Title   string    `json:"title"`
-    Twitch  string    `json:"twitch"`
-    Project string    `json:"project"`
-    IntTime int64     `json:"time"`
-    Time    time.Time `json:"-"`
-};
-
-type Gist struct {
-    Files struct {
-        Schedule struct {
-            ScheduleArray ScheduleArray `json:"content"`
-        } `json:"schedule.json"`
-    } `json:"files"`
-}
-/*
-type Gist struct {
-    Files Files `json:"files"`
-};
-
-type Files struct {
-    ScheduleJson ScheduleJson `json:"schedule.json"`
-};
-
-type ScheduleJson struct {
-    ScheduleArray ScheduleArray `json:"content"`
-};
-*/
-
-// Bot
-type Bot struct {
-    //Config    Config
-    Client      *twitch.Client
-    Username    string
-    UserID      string
-    OauthToken  string
-    ClientID    string
-    GithubToken string
-    GistUrl     string
-    Channels    []Channel
-    Owner       string
-    NormalMsg   [20]time.Time
-    ModMsg      [100]time.Time
-    PrvMsg      string
-    PrvMsgIdx   int8
-};
 
 // TODO: test
 func newBot() *Bot {
     config := loadConfig();
-    bot := &Bot{
+    bot := &Bot {
         Client:      twitch.NewClient(config.Account.Username, config.Account.OauthToken),
         Username:    config.Account.Username,
         UserID:      config.Account.UserID,
@@ -109,12 +34,6 @@ func newBot() *Bot {
     return bot;
 };
 
-func check(e error) {
-    if (e != nil) {
-        panic(e);
-    }
-}
-
 func loadConfig() Config {
     jsonFile, err := os.Open("config.json");
     check(err);
@@ -124,25 +43,6 @@ func loadConfig() Config {
     json.NewDecoder(jsonFile).Decode(&config);
 
     return config;
-}
-
-func getSchedule(gistUrl string) ScheduleArray {
-    resp, err := http.Get(gistUrl);
-    check(err);
-
-    defer resp.Body.Close();
-
-    var scheduleArray ScheduleArray;
-
-    err = json.NewDecoder(resp.Body).Decode(&scheduleArray);
-    check(err);
-
-    for i := 0; i < len(scheduleArray.Schedule); i++ {
-        scheduleArray.Schedule[i].Time = time.Unix(
-            scheduleArray.Schedule[i].IntTime/1000,
-            scheduleArray.Schedule[i].IntTime%1000*1000*1000);
-    }
-    return scheduleArray;
 }
 
 func isChannelLive(channelID string, clientID string) bool {
@@ -166,50 +66,6 @@ func isChannelLive(channelID string, clientID string) bool {
     err = json.NewDecoder(resp.Body).Decode(&t);
     check(err);
     return t.Stream != nil;
-}
-
-func updateSchedule(scheduleAddition Schedule, url string, githubOAuth string, gistUrl string) bool {
-
-    // Get old schedule
-    scheduleArray := getSchedule(gistUrl);
-    scheduleArray.Schedule = append(scheduleArray.Schedule, scheduleAddition);
-
-    gist := Gist{};
-    gist.Files.Schedule.ScheduleArray = scheduleArray;
-
-
-    buffer, _ := json.Marshal(&gist);
-
-    fmt.Printf("%s", buffer);
-    fmt.Println();
-    reader := bytes.NewReader(buffer);
-    fmt.Println();
-
-
-    fmt.Println("https://api.github.com/gists/" + strings.SplitN(url, "/", 6)[4]);
-    fmt.Println();
-
-
-    client := &http.Client{};
-    req, err := http.NewRequest(
-                     "PATCH",
-                     "https://api.github.com/gists/" + strings.SplitN(url, "/", 6)[4],
-                     reader);
-
-    check(err);
-    req.Header.Set("Authorization", githubOAuth);
-
-    resp, err := client.Do(req);
-    check(err);
-
-    defer resp.Body.Close();
-
-    str, err := ioutil.ReadAll(resp.Body);
-    fmt.Printf("%s", str);
-    fmt.Println();
-
-    check(err);
-    return false;
 }
 
 func connectToChannels(client *twitch.Client, channels []Channel) {
@@ -263,11 +119,11 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
         case "update":
             if (message.Tags["display-name"] == bot.Owner) {
                 // Test schedule message
-                schedule := Schedule{
+                schedule := Schedule {
                     Title:   "This is a nice test title",
                     Twitch:  "https://twitch.tv/apa420",
                     Project: "https://github.com/apa420/apabot",
-                    IntTime: time.Now().Unix()*1000 + time.Now().UnixNano()%1000*1000*1000,
+                    IntTime: time.Now().UnixNano() / (1000*1000),
                     Time:    time.Now(),
                 };
 
