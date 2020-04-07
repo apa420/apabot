@@ -7,6 +7,9 @@ import (
 	"os"
 	"strings"
 	"time"
+    "io/ioutil"
+    "bufio"
+    "io"
 
 	"github.com/gempir/go-twitch-irc"
 );
@@ -45,6 +48,18 @@ type Schedule struct {
 	Project string    `json:"project"`
 	IntTime int64     `json:"time"`
 	Time    time.Time `json:"-"`
+};
+
+type Gist struct {
+    files Files `json:"files"`
+};
+
+type Files struct {
+    ScheduleJson ScheduleJson `json:"schedule.json"`
+};
+
+type ScheduleJson struct {
+    ScheduleArray ScheduleArray `json:"content"`
 };
 
 // Bot
@@ -147,25 +162,49 @@ func isChannelLive(channelID string, clientID string) bool {
 func updateSchedule(scheduleAddition Schedule, url string, githubOAuth string, gistUrl string) bool {
 
     // Get old schedule
-    scheduleArray := getSchedule(gistUrl)
-    scheduleArray = append(scheduleArray, scheduleAddition);
+    scheduleArray := getSchedule(gistUrl);
+    scheduleArray.Schedule = append(scheduleArray.Schedule, scheduleAddition);
+
+    buffer :=
+
+    //buffer := bufio.NewWriter();
+    body := json.NewEncoder(writer).Encode(Gist {
+        Files {
+            ScheduleJson {
+                ScheduleArray: scheduleArray,
+            },
+        },
+    });
 
 	client := &http.Client{};
-	req, err := http.NewRequest("PATCH", url, nil);
+    req, err := http.NewRequest(
+                     "PATCH",
+                     "https://api.github.com/gists/" + strings.SplitN(url, "/", 6)[4],
+                     body);
+
 	check(err);
 	req.Header.Set("Authorization", githubOAuth);
 	check(err);
 
-	resp, err := client.Do(req);
+	//resp, err := client.Do(req);
 	check(err);
 
 	defer resp.Body.Close();
 
 	type T struct {
 		Stream interface{};
-	}
+	};
 	var t T;
 	err = json.NewDecoder(resp.Body).Decode(&t);
+    fmt.Println(t);
+
+    str, err := ioutil.ReadAll(resp.Body);
+    fmt.Printf("%s", str);
+
+    if (err != nil) {
+        fmt.Printf("can't decode json string `%s`: %s", t, err);
+    };
+
 	check(err);
 	return t.Stream != nil;
 }
@@ -236,7 +275,7 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
                 }
 
 			}
-		case "isLive":
+case "isLive":
 			if (message.Tags["display-name"] == bot.Owner) {
 				if (isChannelLive(message.RoomID, bot.ClientID)) {
 					sendMessage(message.Channel, "Live :)", bot);
