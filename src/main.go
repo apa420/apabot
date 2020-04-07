@@ -7,8 +7,8 @@ import (
     "os"
     "strings"
     "time"
-    "io/ioutil"
     "bytes"
+    "io/ioutil"
 
     "github.com/gempir/go-twitch-irc"
 );
@@ -50,7 +50,15 @@ type Schedule struct {
 };
 
 type Gist struct {
-    files Files `json:"files"`
+    Files struct {
+        Schedule struct {
+            ScheduleArray ScheduleArray `json:"content"`
+        } `json:"schedule.json"`
+    } `json:"files"`
+}
+/*
+type Gist struct {
+    Files Files `json:"files"`
 };
 
 type Files struct {
@@ -60,6 +68,7 @@ type Files struct {
 type ScheduleJson struct {
     ScheduleArray ScheduleArray `json:"content"`
 };
+*/
 
 // Bot
 type Bot struct {
@@ -124,9 +133,10 @@ func getSchedule(gistUrl string) ScheduleArray {
     defer resp.Body.Close();
 
     var scheduleArray ScheduleArray;
-    fmt.Println(time.Now());
+
     err = json.NewDecoder(resp.Body).Decode(&scheduleArray);
     check(err);
+
     for i := 0; i < len(scheduleArray.Schedule); i++ {
         scheduleArray.Schedule[i].Time = time.Unix(
             scheduleArray.Schedule[i].IntTime/1000,
@@ -164,47 +174,42 @@ func updateSchedule(scheduleAddition Schedule, url string, githubOAuth string, g
     scheduleArray := getSchedule(gistUrl);
     scheduleArray.Schedule = append(scheduleArray.Schedule, scheduleAddition);
 
-    var buffer bytes.Buffer;
+    gist := Gist{};
+    gist.Files.Schedule.ScheduleArray = scheduleArray;
 
-    json.NewEncoder(&buffer).Encode(Gist {
-        Files {
-            ScheduleJson {
-                ScheduleArray: scheduleArray,
-            },
-        },
-    });
+
+    buffer, _ := json.Marshal(&gist);
+
+    fmt.Printf("%s", buffer);
+    fmt.Println();
+    reader := bytes.NewReader(buffer);
+    fmt.Println();
+
+
+    fmt.Println("https://api.github.com/gists/" + strings.SplitN(url, "/", 6)[4]);
+    fmt.Println();
+
 
     client := &http.Client{};
     req, err := http.NewRequest(
                      "PATCH",
                      "https://api.github.com/gists/" + strings.SplitN(url, "/", 6)[4],
-                     &buffer);
+                     reader);
 
     check(err);
     req.Header.Set("Authorization", githubOAuth);
-    check(err);
 
     resp, err := client.Do(req);
     check(err);
 
     defer resp.Body.Close();
 
-    type T struct {
-        Stream interface{};
-    };
-    var t T;
-    err = json.NewDecoder(resp.Body).Decode(&t);
-    fmt.Println(t);
-
-    //str, err := ioutil.ReadAll(resp.Body);
-    //fmt.Printf("%s", str);
-
-    if (err != nil) {
-        fmt.Printf("can't decode json string `%s`: %s", t, err);
-    };
+    str, err := ioutil.ReadAll(resp.Body);
+    fmt.Printf("%s", str);
+    fmt.Println();
 
     check(err);
-    return t.Stream != nil;
+    return false;
 }
 
 func connectToChannels(client *twitch.Client, channels []Channel) {
