@@ -49,39 +49,39 @@ type Schedule struct {
 
 // Bot
 type Bot struct {
-	//Config   Config
-	Client       *twitch.Client
-	Username     string
-	UserID       string
-	OauthToken   string
-	ClientID     string
-	GithubToken  string
-    GistSchedule string
-	Channels     []Channel
-	Owner        string
-	NormalMsg    [20]time.Time
-	ModMsg       [100]time.Time
-	PrvMsg       string
-	PrvMsgIdx    int8
+	//Config    Config
+	Client      *twitch.Client
+	Username    string
+	UserID      string
+	OauthToken  string
+	ClientID    string
+	GithubToken string
+    GistUrl     string
+	Channels    []Channel
+	Owner       string
+	NormalMsg   [20]time.Time
+	ModMsg      [100]time.Time
+	PrvMsg      string
+	PrvMsgIdx   int8
 };
 
 // TODO: test
 func newBot() *Bot {
 	config := loadConfig();
 	bot := &Bot{
-		Client:       twitch.NewClient(config.Account.Username, config.Account.OauthToken),
-		Username:     config.Account.Username,
-		UserID:       config.Account.UserID,
-		OauthToken:   config.Account.OauthToken,
-		ClientID:     config.Account.ClientID,
-		GithubToken:  config.Github.GithubToken,
-        GistSchedule: config.Github.ScheduleUrl,
-		Channels:     config.Channels,
-		Owner:        config.Account.Owner,
-		NormalMsg:    [20]time.Time{},
-		ModMsg:       [100]time.Time{},
-		PrvMsg:       "",
-		PrvMsgIdx:    0,
+		Client:      twitch.NewClient(config.Account.Username, config.Account.OauthToken),
+		Username:    config.Account.Username,
+		UserID:      config.Account.UserID,
+		OauthToken:  config.Account.OauthToken,
+		ClientID:    config.Account.ClientID,
+		GithubToken: config.Github.GithubToken,
+        GistUrl:     config.Github.ScheduleUrl,
+		Channels:    config.Channels,
+		Owner:       config.Account.Owner,
+		NormalMsg:   [20]time.Time{},
+		ModMsg:      [100]time.Time{},
+		PrvMsg:      "",
+		PrvMsgIdx:   0,
 	};
 	return bot;
 };
@@ -103,22 +103,22 @@ func loadConfig() Config {
 	return config;
 }
 
-func getSchedule() ScheduleArray {
-	resp, err := http.Get("https://gist.githubusercontent.com/apa420/5bb8cebdda4c7331d5384567f93e3267/raw/");
+func getSchedule(gistUrl string) ScheduleArray {
+	resp, err := http.Get(gistUrl);
 	check(err);
 
 	defer resp.Body.Close();
 
-	var schedule ScheduleArray;
+	var scheduleArray ScheduleArray;
 	fmt.Println(time.Now());
-	err = json.NewDecoder(resp.Body).Decode(&schedule);
+	err = json.NewDecoder(resp.Body).Decode(&scheduleArray);
 	check(err);
-	for i := 0; i < len(schedule.Schedule); i++ {
-		schedule.Schedule[i].Time = time.Unix(
-			schedule.Schedule[i].IntTime/1000,
-            schedule.Schedule[i].IntTime%1000*1000*1000);
+	for i := 0; i < len(scheduleArray.Schedule); i++ {
+		scheduleArray.Schedule[i].Time = time.Unix(
+			scheduleArray.Schedule[i].IntTime/1000,
+            scheduleArray.Schedule[i].IntTime%1000*1000*1000);
 	}
-	return schedule;
+	return scheduleArray;
 }
 
 func isChannelLive(channelID string, clientID string) bool {
@@ -144,7 +144,12 @@ func isChannelLive(channelID string, clientID string) bool {
 	return t.Stream != nil;
 }
 
-func updateSchedule(schedule Schedule, url string, githubOAuth string) bool {
+func updateSchedule(scheduleAddition Schedule, url string, githubOAuth string, gistUrl string) bool {
+
+    // Get old schedule
+    scheduleArray := getSchedule(gistUrl)
+    scheduleArray = append(scheduleArray, scheduleAddition);
+
 	client := &http.Client{};
 	req, err := http.NewRequest("PATCH", url, nil);
 	check(err);
@@ -208,8 +213,8 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
 		case "get":
 			if (message.Tags["display-name"] == bot.Owner) {
 				// Do http request
-				schedule := getSchedule();
-				fmt.Println(schedule);
+				scheduleArray := getSchedule(bot.GistUrl);
+				fmt.Println(scheduleArray);
 
 				sendMessage(message.Channel, "Sent request", bot);
 			}
@@ -221,9 +226,10 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
                     Twitch:  "https://twitch.tv/apa420",
                     Project: "https://github.com/apa420/apabot",
                     IntTime: time.Now().Unix()*1000 + time.Now().UnixNano()%1000*1000*1000,
+                    Time:    time.Now(),
                 };
 
-				if (updateSchedule(schedule, bot.GistSchedule, bot.GithubToken)) {
+				if (updateSchedule(schedule, bot.GistUrl, bot.GithubToken, bot.GistUrl)) {
 				    sendMessage(message.Channel, "Request succeeded!", bot);
                 } else {
 				    sendMessage(message.Channel, "Request failed!", bot);
