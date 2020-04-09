@@ -6,6 +6,7 @@ import (
     "net/http"
     "os"
     "strings"
+    "strconv"
     "time"
 
     "github.com/gempir/go-twitch-irc"
@@ -17,19 +18,20 @@ import (
 func newBot() *Bot {
     config := loadConfig();
     bot := &Bot {
-        Client:      twitch.NewClient(config.Account.Username, config.Account.OauthToken),
-        Username:    config.Account.Username,
-        UserID:      config.Account.UserID,
-        OauthToken:  config.Account.OauthToken,
-        ClientID:    config.Account.ClientID,
-        GithubToken: config.Github.GithubToken,
-        GistUrl:     config.Github.ScheduleUrl,
-        Channels:    config.Channels,
-        Owner:       config.Account.Owner,
-        NormalMsg:   [20]time.Time{},
-        ModMsg:      [100]time.Time{},
-        PrvMsg:      "",
-        PrvMsgIdx:   0,
+        Client:        twitch.NewClient(config.Account.Username, config.Account.OauthToken),
+        Username:      config.Account.Username,
+        UserID:        config.Account.UserID,
+        OauthToken:    config.Account.OauthToken,
+        ClientID:      config.Account.ClientID,
+        GithubToken:   config.Github.GithubToken,
+        GistUrl:       config.Github.ScheduleUrl,
+        Channels:      config.Channels,
+        Owner:         config.Account.Owner,
+        NormalMsg:     [20]time.Time{},
+        ModMsg:        [100]time.Time{},
+        PrvMsg:        "",
+        PrvMsgIdx:     0,
+        ScheduleArray: getSchedule(config.Github.ScheduleUrl),
     };
     return bot;
 };
@@ -105,32 +107,89 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
 
         commandName := strings.SplitN(message.Message, " ", 2)[0][1:];
 
+        msgLen := len(strings.SplitN(message.Message, " ", -1));
+
         switch commandName {
         case "":
             sendMessage(message.Channel, "Why, hello there :)", bot);
-        case "get":
-            if (message.Tags["display-name"] == bot.Owner) {
-                // Do http request
-                scheduleArray := getSchedule(bot.GistUrl);
-                fmt.Println(scheduleArray);
 
-                sendMessage(message.Channel, "Sent request", bot);
-            }
-        case "update":
+        case "schupd":
             if (message.Tags["display-name"] == bot.Owner) {
-                // Test schedule message
-                schedule := Schedule {
-                    Title:   "This is a nice test title",
-                    Twitch:  "https://twitch.tv/apa420",
-                    Project: "https://github.com/apa420/apabot",
-                    IntTime: time.Now().UnixNano() / (1000*1000),
-                    Time:    time.Now(),
-                };
 
-                if (updateSchedule(schedule, bot.GistUrl, bot.GithubToken, bot.GistUrl)) {
+                sortSchedule(&bot.ScheduleArray);
+
+                if (sendSchedule(&bot.ScheduleArray, bot.GithubToken, bot.GistUrl)) {
                     sendMessage(message.Channel, "Request succeeded!", bot);
                 } else {
                     sendMessage(message.Channel, "Request failed!", bot);
+                }
+            }
+
+        case "schget":
+            if (message.Tags["display-name"] == bot.Owner) {
+                // Do http request
+                bot.ScheduleArray = getSchedule(bot.GistUrl);
+                fmt.Println(bot.ScheduleArray);
+
+                sendMessage(message.Channel, "Sent request", bot);
+            }
+        case "schcle":
+            if (message.Tags["display-name"] == bot.Owner) {
+                cleanSchedule(&bot.ScheduleArray);
+                sendMessage(message.Channel, "Cleaning", bot);
+            }
+        case "schadd":
+            if (message.Tags["display-name"] == bot.Owner) {
+                // /update Cool test stream, apabot, 2d 2000
+
+                if (msgLen > 1) {
+
+                    messageStrip := strings.SplitN(message.Message, " ", 2)[1];
+                    content := strings.SplitN(messageStrip, ", ", -1);
+
+                    hour := 0;
+                    second := 0;
+                    if (len(content) > 2) {
+
+                        title := content[0];
+                        project := "https://github.com/apa420/" + content[1];
+                        schTime := time.Now();
+
+                        for _, element := range strings.SplitN(content[2], " ", -1) {
+                            if (len(element) > 1) {
+                                if (element[len(element)-1] == 'd') {
+
+
+                                    days, err := strconv.Atoi(element[0:len(element)-1]);
+                                    check(err);
+
+                                    schTime = schTime.AddDate(0, 0, days);
+                                } else if (len(element) == 4) {
+                                    hour, _ = strconv.Atoi(element[0:2]);
+                                    second, _ = strconv.Atoi(element[2:4]);
+                                }
+                            }
+                        }
+                        location, err := time.LoadLocation("Europe/Stockholm");
+                        check(err);
+                        schTime = time.Date(schTime.Year(), schTime.Month(),
+                                            schTime.Day(), hour, second, 0, 0,
+                                            location);
+
+                        schedule := Schedule {
+                            Title:   title,
+                            Twitch:  "https://twitch.tv/apa420",
+                            Project: project,
+                            IntTime: schTime.UnixNano() / (1000*1000),
+                            Time:    schTime,
+                        };
+
+                        if (addScheduleEntry(schedule, &bot.ScheduleArray, bot.GithubToken, bot.GistUrl)) {
+                            sendMessage(message.Channel, "Request succeeded!", bot);
+                        } else {
+                            sendMessage(message.Channel, "Request failed!", bot);
+                        }
+                    }
                 }
 
             }
@@ -144,8 +203,8 @@ case "isLive":
             }
         case "echo":
             if (message.Tags["display-name"] == bot.Owner) {
-                if (len(strings.SplitN(message.Message, " ", 2)) > 1) {
-                    sendMessage(message.Channel, strings.SplitN(message.Message, " ", 2)[1], bot);
+                if (len(strings.SplitN(message.Message, " ", 1)) > 0) {
+                    sendMessage(message.Channel, strings.SplitN(message.Message, " ", -1)[0], bot);
                 } else {
                     sendMessage(message.Channel, "Can't return empty string", bot);
                 }
@@ -164,6 +223,13 @@ case "isLive":
             } else {
                 sendMessage(message.Channel, message.Tags["display-name"] + " has been banned!", bot);
             }
+        case "dank":
+            if (len(strings.SplitN(message.Message, " ", 2)) > 1) {
+                sendMessage(message.Channel, strings.SplitN(message.Message, " ", 2)[1] + " FeelsDankMan", bot);
+            } else {
+                sendMessage(message.Channel, message.Tags["display-name"] + " FeelsDankMan", bot);
+            }
+
         default:
             sendMessage(message.Channel, "Soon ™", bot);
         }

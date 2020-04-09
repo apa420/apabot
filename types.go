@@ -44,6 +44,8 @@ type ScheduleArray struct {
     Schedule []Schedule `json:"schedule"`
 };
 
+type ScheduleSlice []Schedule;
+
 type Schedule struct {
     Title   string    `json:"title"`
     Twitch  string    `json:"twitch"`
@@ -52,21 +54,33 @@ type Schedule struct {
     Time    time.Time `json:"-"`
 };
 
+func (e ScheduleSlice) Len() int {
+    return len(e);
+}
+
+func (e ScheduleSlice) Less(i int, j int) bool {
+    return e[i].IntTime < e[j].IntTime;
+}
+
+func (e ScheduleSlice) Swap(i int, j int) {
+    e[i], e[j] = e[j], e[i];
+}
 
 // Bot
 type Bot struct {
-    //Config    Config
-    Client      *twitch.Client
-    Username    string
-    UserID      string
-    OauthToken  string
-    ClientID    string
-    GithubToken string
-    GistUrl     string
-    Channels    []Channel
-    Owner       string
-    NormalMsg   [20]time.Time
-    ModMsg      [100]time.Time
-    PrvMsg      string
-    PrvMsgIdx   int8
+    //Config       Config
+    Client         *twitch.Client
+    Username       string
+    UserID         string
+    OauthToken     string
+    ClientID       string
+    GithubToken    string
+    GistUrl        string
+    Channels       []Channel
+    Owner          string
+    NormalMsg      [20]time.Time
+    ModMsg         [100]time.Time
+    PrvMsg         string
+    PrvMsgIdx      int8
+    ScheduleArray  ScheduleArray
 };

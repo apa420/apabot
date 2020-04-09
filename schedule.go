@@ -3,10 +3,9 @@ package main;
 import "net/http"
 import "encoding/json"
 import "time"
-import "fmt"
-import "io/ioutil"
 import "bytes"
 import "strings"
+import "sort"
 
 func getSchedule(gistUrl string) ScheduleArray {
     resp, err := http.Get(gistUrl);
@@ -27,19 +26,12 @@ func getSchedule(gistUrl string) ScheduleArray {
     return scheduleArray;
 }
 
-func updateSchedule(scheduleAddition Schedule, url string, githubOAuth string, gistUrl string) bool {
-
-    // Get old schedule
-    scheduleArray := getSchedule(gistUrl);
-    scheduleArray.Schedule = append(scheduleArray.Schedule, scheduleAddition);
+func sendSchedule(scheduleArray *ScheduleArray, githubOAuth string, gistUrl string) bool {
 
     gist := Gist{};
-    content, err := json.MarshalIndent(scheduleArray, "", " ");
+    content, err := json.MarshalIndent(*scheduleArray, "", " ");
     gist.Files.ScheduleJson.Content = string(content);
 
-
-    //buffer, err := json.Marshal(&gist);
-    //check(err);
     buffer, err := json.MarshalIndent(&gist, "", " ");
     check(err);
 
@@ -49,7 +41,7 @@ func updateSchedule(scheduleAddition Schedule, url string, githubOAuth string, g
     client := &http.Client{};
     req, err := http.NewRequest(
                      "PATCH",
-                     "https://api.github.com/gists/" + strings.SplitN(url, "/", 6)[4],
+                     "https://api.github.com/gists/" + strings.SplitN(gistUrl, "/", 6)[4],
                      reader);
 
     check(err);
@@ -62,10 +54,33 @@ func updateSchedule(scheduleAddition Schedule, url string, githubOAuth string, g
 
     defer resp.Body.Close();
 
-    str, err := ioutil.ReadAll(resp.Body);
-    fmt.Printf("%s", str);
-    fmt.Println();
-
-    check(err);
     return resp.StatusCode == 200;
+}
+
+func addScheduleEntry(scheduleAddition Schedule, scheduleArray *ScheduleArray, githubOAuth string, gistUrl string) bool {
+
+    scheduleArray.Schedule = append(scheduleArray.Schedule, scheduleAddition);
+    sortSchedule(*&scheduleArray);
+
+    return sendSchedule(*&scheduleArray, githubOAuth, gistUrl);
+}
+
+func sortSchedule(scheduleArray *ScheduleArray) {
+    sort.Sort(ScheduleSlice(scheduleArray.Schedule));
+}
+
+func cleanSchedule(scheduleArray *ScheduleArray) {
+    if (len(scheduleArray.Schedule) == 0) {
+        return;
+    }
+    for i := len(scheduleArray.Schedule) - 1; i >= 0; i-- {
+        if (time.Now().AddDate(0, 0, -1).After(scheduleArray.Schedule[i].Time)) {
+            if (i == len(scheduleArray.Schedule) -2) {
+                scheduleArray.Schedule = nil;
+            } else {
+                scheduleArray.Schedule = scheduleArray.Schedule[i+1:len(scheduleArray.Schedule)-1];
+            }
+            return;
+        }
+    }
 }
