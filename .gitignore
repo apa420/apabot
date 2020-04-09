@@ -7,7 +7,7 @@
 apabot
 
 # Go imports
-go.mod
+go.sum
 
 # Config
 config.json
