@@ -16,23 +16,29 @@ import "github.com/gempir/go-twitch-irc/v2"
 func newBot() *Bot {
     config := loadConfig();
     bot := &Bot {
-        Client:        twitch.NewClient(config.Account.Username, config.Account.OauthToken),
-        Username:      config.Account.Username,
-        UserID:        config.Account.UserID,
-        OauthToken:    config.Account.OauthToken,
-        ClientID:      config.Account.ClientID,
-        GithubToken:   config.Github.GithubToken,
-        GistUrl:       config.Github.ScheduleUrl,
-        Channels:      config.Channels,
-        Owner:         config.Account.Owner,
-        NormalMsg:     [20]time.Time{},
-        ModMsg:        [100]time.Time{},
-        PrvMsg:        "",
-        PrvMsgIdx:     0,
-        ScheduleArray: getSchedule(config.Github.ScheduleUrl),
+        Client:       twitch.NewClient(config.Account.Username, config.Account.OauthToken),
+        Username:     config.Account.Username,
+        UserID:       config.Account.UserID,
+        OauthToken:   config.Account.OauthToken,
+        ClientID:     config.Account.ClientID,
+        GithubToken:  config.Github.GithubToken,
+        GistUrl:      config.Github.ScheduleUrl,
+        Channels:     config.Channels,
+        Owner:        config.Account.Owner,
+        NormalMsg:    [20]time.Time{},
+        ModMsg:       [100]time.Time{},
+        PrvMsg:       make(map[string]string),
+        PrvMsgIdx:    0,
+        Schedule:     getSchedule(config.Github.ScheduleUrl),
     };
+
+    for i := 0; i < len(bot.Channels); i++ {
+        bot.PrvMsg[bot.Channels[i].ChannelName] = "";
+    }
+
     return bot;
 };
+
 
 func loadConfig() Config {
     jsonFile, err := os.Open("config.json");
@@ -76,17 +82,40 @@ func connectToChannels(client *twitch.Client, channels []Channel) {
 }
 
 func sendMessage(target string, message string, bot *Bot) {
+
+    if (throttleNormalMessage(bot)) {
+        return;
+    }
+
+    bot.NormalMsg[bot.PrvMsgIdx] = time.Now();
+    bot.PrvMsgIdx = (bot.PrvMsgIdx + 1) % 20;
+
     if (message[0] == '.' || message[0] == '/') {
         message = ". " + message;
     }
+
     if (len(message) > 247) {
         message = message[0:247];
+
     }
-    if (bot.PrvMsg == message) {
+
+    if (bot.PrvMsg[target] == message) {
         message += " \U000E0000";
     }
+
     bot.Client.Say(target, message);
-    bot.PrvMsg = message;
+    bot.PrvMsg[target] = message;
+}
+
+func throttleNormalMessage(bot *Bot) bool {
+
+    if (bot.NormalMsg[(bot.PrvMsgIdx + 19) % 20].Add(1500 * time.Millisecond).After(time.Now())) {
+        return true;
+    }
+    if (bot.NormalMsg[bot.PrvMsgIdx].Add(30 * time.Second).After(time.Now())) {
+        return true;
+    }
+    return false;
 }
 
 func banUser(target string, user string, bot *Bot) {
@@ -94,14 +123,8 @@ func banUser(target string, user string, bot *Bot) {
 }
 
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
+
     if (message.Message[0] == '/') {
-
-        if (throttleNormalMessage(bot)) {
-            return;
-        }
-
-        bot.NormalMsg[bot.PrvMsgIdx] = time.Now();
-        bot.PrvMsgIdx = (bot.PrvMsgIdx + 1) % 20;
 
         commandName := strings.SplitN(message.Message, " ", 2)[0][1:];
 
@@ -119,9 +142,10 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
         case "schupd":
             if (message.Tags["display-name"] == bot.Owner) {
 
-                sortSchedule(&bot.ScheduleArray);
+                sortSchedule(&bot.Schedule);
 
-                if (sendSchedule(&bot.ScheduleArray, bot.GithubToken, bot.GistUrl)) {
+                if (sendSchedule(&bot.Schedule, bot.GithubToken, bot.GistUrl,
+                                 isChannelLive(message.RoomID, bot.ClientID))) {
                     sendMessage(message.Channel, "Request succeeded!", bot);
                 } else {
                     sendMessage(message.Channel, "Request failed!", bot);
@@ -131,14 +155,14 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
         case "schget":
             if (message.Tags["display-name"] == bot.Owner) {
                 // Do http request
-                bot.ScheduleArray = getSchedule(bot.GistUrl);
-                fmt.Println(bot.ScheduleArray);
+                bot.Schedule = getSchedule(bot.GistUrl);
+                fmt.Println(bot.Schedule);
 
                 sendMessage(message.Channel, "Sent request", bot);
             }
         case "schcle":
             if (message.Tags["display-name"] == bot.Owner) {
-                cleanSchedule(&bot.ScheduleArray);
+                cleanSchedule(&bot.Schedule);
                 sendMessage(message.Channel, "Cleaning", bot);
             }
         case "schadd":
@@ -175,8 +199,13 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
                         }
                         location, err := time.LoadLocation("Europe/Stockholm");
                         check(err);
-                        schTime = time.Date(schTime.Year(), schTime.Month(),
-                                            schTime.Day(), hour, second, 0, 0,
+                        schTime = time.Date(schTime.Year(),
+                                            schTime.Month(),
+                                            schTime.Day(),
+                                            hour,
+                                            second,
+                                            0,
+                                            0,
                                             location);
 
                         schedule := Schedule {
@@ -187,7 +216,9 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
                             Time:    schTime,
                         };
 
-                        if (addScheduleEntry(schedule, &bot.ScheduleArray, bot.GithubToken, bot.GistUrl)) {
+                        if (addScheduleEntry(schedule, &bot.Schedule, bot.GithubToken,
+                                             bot.GistUrl, isChannelLive(message.RoomID,
+                                             bot.ClientID))) {
                             sendMessage(message.Channel, "Request succeeded!", bot);
                         } else {
                             sendMessage(message.Channel, "Request failed!", bot);
@@ -219,8 +250,8 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
         case "tf":
             sendMessage(message.Channel, ":tf:", bot);
 
-        case "help":
-            sendMessage(message.Channel, "Bot made by apa420 https://github.com/apa420/apabot", bot);
+        case "bot":
+            sendMessage(message.Channel, "Bot made by apa420 written in Golang repo: https://github.com/apa420/apabot", bot);
 
         case "ban":
             if (len(strings.SplitN(message.Message, " ", 2)) > 1) {
@@ -245,16 +276,6 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
     }
 }
 
-func throttleNormalMessage(bot *Bot) bool {
-
-    if (bot.NormalMsg[(bot.PrvMsgIdx+19)%20].Add(1500 * time.Millisecond).After(time.Now())) {
-        return true;
-    }
-    if (bot.NormalMsg[bot.PrvMsgIdx].Add(30 * time.Second).After(time.Now())) {
-        return true;
-    }
-    return false;
-}
 
 func Run() {
     bot := newBot();

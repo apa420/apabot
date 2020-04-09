@@ -40,11 +40,10 @@ type Channel struct {
     ChannelName string `json:"channelName"`
 };
 
-type ScheduleArray struct {
+type GistContent struct {
+    IsLive   bool       `json:"is_live"`
     Schedule []Schedule `json:"schedule"`
-};
-
-type ScheduleSlice []Schedule;
+}
 
 type Schedule struct {
     Title   string    `json:"title"`
@@ -53,18 +52,6 @@ type Schedule struct {
     IntTime int64     `json:"time"`
     Time    time.Time `json:"-"`
 };
-
-func (e ScheduleSlice) Len() int {
-    return len(e);
-}
-
-func (e ScheduleSlice) Less(i int, j int) bool {
-    return e[i].IntTime < e[j].IntTime;
-}
-
-func (e ScheduleSlice) Swap(i int, j int) {
-    e[i], e[j] = e[j], e[i];
-}
 
 // Bot
 type Bot struct {
@@ -80,7 +67,7 @@ type Bot struct {
     Owner          string
     NormalMsg      [20]time.Time
     ModMsg         [100]time.Time
-    PrvMsg         string
+    PrvMsg         map[string]string
     PrvMsgIdx      int8
-    ScheduleArray  ScheduleArray
+    Schedule       []Schedule
 };

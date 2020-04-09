@@ -5,31 +5,37 @@ import "encoding/json"
 import "time"
 import "bytes"
 import "strings"
-import "sort"
 
-func getSchedule(gistUrl string) ScheduleArray {
+func getSchedule(gistUrl string) []Schedule {
     resp, err := http.Get(gistUrl);
     check(err);
 
     defer resp.Body.Close();
 
-    var scheduleArray ScheduleArray;
+    var gistContent GistContent;
 
-    err = json.NewDecoder(resp.Body).Decode(&scheduleArray);
+    err = json.NewDecoder(resp.Body).Decode(&gistContent);
     check(err);
+    scheduleArray := gistContent.Schedule;
 
-    for i := 0; i < len(scheduleArray.Schedule); i++ {
-        scheduleArray.Schedule[i].Time = time.Unix(
+    for i := 0; i < len(scheduleArray); i++ {
+        scheduleArray[i].Time = time.Unix(
             0,
-            scheduleArray.Schedule[i].IntTime * (1000*1000));
+            scheduleArray[i].IntTime * (1000*1000));
     }
     return scheduleArray;
 }
 
-func sendSchedule(scheduleArray *ScheduleArray, githubOAuth string, gistUrl string) bool {
+func sendSchedule(scheduleArray *[]Schedule, githubOAuth string, gistUrl string, isLive bool) bool {
 
     gist := Gist{};
-    content, err := json.MarshalIndent(*scheduleArray, "", " ");
+
+    preContent := GistContent {
+        IsLive: isLive,
+        Schedule: *scheduleArray,
+    }
+
+    content, err := json.MarshalIndent(preContent, "", " ");
     gist.Files.ScheduleJson.Content = string(content);
 
     buffer, err := json.MarshalIndent(&gist, "", " ");
@@ -57,28 +63,48 @@ func sendSchedule(scheduleArray *ScheduleArray, githubOAuth string, gistUrl stri
     return resp.StatusCode == 200;
 }
 
-func addScheduleEntry(scheduleAddition Schedule, scheduleArray *ScheduleArray, githubOAuth string, gistUrl string) bool {
+func addScheduleEntry(scheduleAddition Schedule, scheduleArray *[]Schedule, githubOAuth string, gistUrl string, isLive bool) bool {
 
-    scheduleArray.Schedule = append(scheduleArray.Schedule, scheduleAddition);
+    *scheduleArray = append(*scheduleArray, scheduleAddition);
     sortSchedule(*&scheduleArray);
 
-    return sendSchedule(*&scheduleArray, githubOAuth, gistUrl);
+    return sendSchedule(*&scheduleArray, githubOAuth, gistUrl, isLive);
 }
 
-func sortSchedule(scheduleArray *ScheduleArray) {
-    sort.Sort(ScheduleSlice(scheduleArray.Schedule));
-}
-
-func cleanSchedule(scheduleArray *ScheduleArray) {
-    if (len(scheduleArray.Schedule) == 0) {
+func sortSchedule(scheduleArray *[]Schedule) {
+    if (len(*scheduleArray) == 0) {
         return;
     }
-    for i := len(scheduleArray.Schedule) - 1; i >= 0; i-- {
-        if (time.Now().AddDate(0, 0, -1).After(scheduleArray.Schedule[i].Time)) {
-            if (i == len(scheduleArray.Schedule) -2) {
-                scheduleArray.Schedule = nil;
+
+    tempArray := []Schedule{(*scheduleArray)[0]};
+
+    for i := 1; i < len(*scheduleArray); i++ {
+        for j := 0; j <= i; j++ {
+            if (i == j) {
+                tempArray = append(tempArray, (*scheduleArray)[i]);
+            }
+            if (tempArray[j].Time.After((*scheduleArray)[i].Time)) {
+                tempTempArray := tempArray[j:i-1];
+                tempArray = append(tempArray[0:j], (*scheduleArray)[i]);
+                tempArray = append(tempArray, tempTempArray...);
+                break;
+            }
+        }
+
+    }
+    *scheduleArray = tempArray;
+}
+
+func cleanSchedule(scheduleArray *[]Schedule) {
+    if (len(*scheduleArray) == 0) {
+        return;
+    }
+    for i := len(*scheduleArray) - 1; i >= 0; i-- {
+        if (time.Now().AddDate(0, 0, -1).After((*scheduleArray)[i].Time)) {
+            if (i == len(*scheduleArray) -2) {
+                scheduleArray = nil;
             } else {
-                scheduleArray.Schedule = scheduleArray.Schedule[i+1:len(scheduleArray.Schedule)-1];
+                *scheduleArray = (*scheduleArray)[i+1:len(*scheduleArray)-1];
             }
             return;
         }
