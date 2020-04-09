@@ -1,7 +1,7 @@
-package main;
+package bot;
 
 import "time"
-import "github.com/gempir/go-twitch-irc"
+import "github.com/gempir/go-twitch-irc/v2"
 
 func check(e error) {
     if (e != nil) {

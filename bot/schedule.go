@@ -1,4 +1,4 @@
-package main;
+package bot;
 
 import "net/http"
 import "encoding/json"
