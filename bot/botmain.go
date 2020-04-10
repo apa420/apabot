@@ -81,6 +81,11 @@ func connectToChannels(client *twitch.Client, channels []Channel) {
     }
 }
 
+func joinChannel(client *twitch.Client, channel string) {
+    client.Join(channel);
+    client.Say(channel, ":)");
+}
+
 func sendMessage(target string, message string, bot *Bot) {
 
     if (throttleNormalMessage(bot)) {
@@ -122,8 +127,17 @@ func banUser(target string, user string, bot *Bot) {
     bot.Client.Say(target, ".ban " + user);
 }
 
+func timeoutUser(target string, user string, duration string, bot *Bot) {
+    bot.Client.Say(target, ".timeout " + user + " " + duration);
+}
+
 func handleMessage(message twitch.PrivateMessage, bot *Bot) {
 
+    if (len(message.Message) > 2) {
+        if (message.Message[0:3] == "⣿") {
+            timeoutUser(message.Channel, message.Tags["display-name"], "10m", bot);
+        }
+    }
     if (message.Message[0] == '/') {
 
         commandName := strings.SplitN(message.Message, " ", 2)[0][1:];
@@ -134,8 +148,14 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
         case "":
             sendMessage(message.Channel, "Why, hello there :)", bot);
 
+        case "join":
+            if (msgLen > 1) {
+                joinChannel(bot.Client, strings.SplitN(message.Message, " ", -1)[1]);
+            }
+
         case "regex":
             sendMessage(message.Channel, "Regex I use for chatterino: https://gist.github.com/apa420/2e1003636949f90ab440fa119c8ddcc2", bot);
+
         case "sch":
             sendMessage(message.Channel, "Schedule: apa420.github.io", bot);
 
@@ -240,7 +260,7 @@ func handleMessage(message twitch.PrivateMessage, bot *Bot) {
         case "echo":
             if (message.Tags["display-name"] == bot.Owner) {
                 if (len(strings.SplitN(message.Message, " ", 1)) > 0) {
-                    sendMessage(message.Channel, strings.SplitN(message.Message, " ", -1)[0], bot);
+                    sendMessage(message.Channel, message.Message[6:len(message.Message)], bot);
                 } else {
                     sendMessage(message.Channel, "Can't return empty string", bot);
                 }
